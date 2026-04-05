@@ -1,0 +1,1278 @@
+{
+  "info": {
+    "name": "pms-integration-services",
+    "description": "TravelHub — Grupo 9 | MISW4501 — Uniandes\n\nColección completa para el microservicio pms-integration-services.\n\n## Variables de entorno requeridas\n- `base_url`: URL base del servicio (ej. http://localhost:8000)\n- `hotel_admin_token`: JWT con role=hotel_admin\n- `traveler_token`: JWT con role=traveler\n- `hotel_id`: UUID de un hotel existente\n- `property_id`: UUID de una PMSProperty existente\n- `event_id`: ID de un SyncEvent existente\n\n## Flujo recomendado\n1. Health Check\n2. Crear Hotel (si aplica)\n3. Registrar PMS Property\n4. Enviar Webhook\n5. Consultar Sync Status\n6. Consultar Disponibilidad",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "travelhub-pms"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "hotel_admin_token",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLTEiLCJyb2xlIjoiaG90ZWxfYWRtaW4iLCJlbWFpbCI6ImFkbWluQHRyYXZlbGh1Yi5hcHAifQ.fake_signature",
+      "type": "string"
+    },
+    {
+      "key": "traveler_token",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLTIiLCJyb2xlIjoidHJhdmVsZXIiLCJlbWFpbCI6InRyYXZlbGVyQGVtYWlsLmNvbSJ9.fake_signature",
+      "type": "string"
+    },
+    {
+      "key": "hotel_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "property_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "event_id",
+      "value": "hotelbeds-evt-2026-001",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Service is ok', function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.status).to.equal('ok');",
+                  "    pm.expect(body.service).to.equal('pms-integration-services');",
+                  "    pm.expect(body).to.have.property('database');",
+                  "    pm.expect(body).to.have.property('kafka');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            },
+            "description": "Verifica conectividad con base de datos y Kafka. No requiere autenticación."
+          },
+          "response": [
+            {
+              "name": "200 OK — Servicio saludable",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/health",
+                  "host": ["{{base_url}}"],
+                  "path": ["health"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"status\": \"ok\",\n  \"service\": \"pms-integration-services\",\n  \"database\": \"ok\",\n  \"kafka\": \"ok\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Webhook",
+      "item": [
+        {
+          "name": "Enviar Webhook — Availability Update",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Genera un event_id único para evitar idempotencia en pruebas repetidas",
+                  "const eventId = 'hotelbeds-evt-' + Date.now();",
+                  "pm.collectionVariables.set('event_id', eventId);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 202', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});",
+                  "pm.test('Response contains event_id and status queued', function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body).to.have.property('event_id');",
+                  "    pm.expect(body.status).to.equal('queued');",
+                  "    // Guardar event_id para consultas posteriores",
+                  "    pm.collectionVariables.set('event_id', body.event_id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{hotel_admin_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_id\": \"{{event_id}}\",\n  \"event_type\": \"availability_update\",\n  \"pms_provider\": \"hotelbeds\",\n  \"pms_property_id\": \"HB-12345\",\n  \"timestamp\": \"2026-04-05T10:00:00Z\",\n  \"data\": {\n    \"room_id\": \"room-suite-001\",\n    \"room_type\": \"Suite\",\n    \"dates\": [\n      {\n        \"date\": \"2026-06-01\",\n        \"available_units\": 3,\n        \"rate\": 250.00,\n        \"currency\": \"USD\"\n      },\n      {\n        \"date\": \"2026-06-02\",\n        \"available_units\": 5,\n        \"rate\": 250.00,\n        \"currency\": \"USD\"\n      }\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/pms/webhook",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pms", "webhook"]
+            },
+            "description": "Recibe un evento de sincronización de disponibilidad desde un PMS.\n\nRequiere JWT con role=hotel_admin o platform_admin, o autenticación HMAC para sistemas PMS externos.\n\nResponde 202 inmediatamente — el procesamiento real lo realiza pms-sync-worker."
+          },
+          "response": [
+            {
+              "name": "202 Accepted — Evento encolado",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {"key": "Authorization", "value": "Bearer {{hotel_admin_token}}"}
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"event_id\": \"hotelbeds-evt-2026-001\",\n  \"event_type\": \"availability_update\",\n  \"pms_provider\": \"hotelbeds\",\n  \"pms_property_id\": \"HB-12345\",\n  \"timestamp\": \"2026-04-05T10:00:00Z\",\n  \"data\": {\"room_id\": \"r1\"}\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/pms/webhook",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "pms", "webhook"]
+                }
+              },
+              "status": "Accepted",
+              "code": 202,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"event_id\": \"hotelbeds-evt-2026-001\",\n  \"status\": \"queued\"\n}"
+            },
+            {
+              "name": "202 Accepted — Evento duplicado (idempotencia)",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {"key": "Authorization", "value": "Bearer {{hotel_admin_token}}"}
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"event_id\": \"hotelbeds-evt-2026-001\",\n  \"event_type\": \"availability_update\",\n  \"pms_provider\": \"hotelbeds\",\n  \"pms_property_id\": \"HB-12345\",\n  \"timestamp\": \"2026-04-05T10:00:00Z\",\n  \"data\": {\"room_id\": \"r1\"}\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/pms/webhook",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "pms", "webhook"]
+                }
+              },
+              "status": "Accepted",
+              "code": 202,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"event_id\": \"hotelbeds-evt-2026-001\",\n  \"status\": \"queued\"\n}"
+            },
+            {
+              "name": "404 Not Found — PMS property no registrada",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {"key": "Authorization", "value": "Bearer {{hotel_admin_token}}"}
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"event_id\": \"evt-unknown\",\n  \"event_type\": \"availability_update\",\n  \"pms_provider\": \"hotelbeds\",\n  \"pms_property_id\": \"UNKNOWN-999\",\n  \"timestamp\": \"2026-04-05T10:00:00Z\",\n  \"data\": {}\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/pms/webhook",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "pms", "webhook"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"detail\": \"PMS property not found: hotelbeds/UNKNOWN-999\"\n}"
+            },
+            {
+              "name": "422 Unprocessable — Payload inválido",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {"key": "Authorization", "value": "Bearer {{hotel_admin_token}}"}
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"bad_field\": \"bad_value\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/pms/webhook",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "pms", "webhook"]
+                }
+              },
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"detail\": [\n    {\n      \"type\": \"missing\",\n      \"loc\": [\"body\", \"event_id\"],\n      \"msg\": \"Field required\"\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Enviar Webhook — Rate Update",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.collectionVariables.set('event_id', 'rate-evt-' + Date.now());"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 202', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{hotel_admin_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_id\": \"{{event_id}}\",\n  \"event_type\": \"rate_update\",\n  \"pms_provider\": \"hotelbeds\",\n  \"pms_property_id\": \"HB-12345\",\n  \"timestamp\": \"2026-04-05T12:00:00Z\",\n  \"data\": {\n    \"room_id\": \"room-standard-001\",\n    \"rates\": [\n      {\n        \"date_from\": \"2026-06-01\",\n        \"date_to\": \"2026-06-30\",\n        \"price\": 180.00,\n        \"currency\": \"USD\",\n        \"discount\": 10.00\n      }\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/pms/webhook",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pms", "webhook"]
+            },
+            "description": "Evento de actualización de tarifas desde un PMS."
+          },
+          "response": []
+        },
+        {
+          "name": "Enviar Webhook — HMAC (PMS Externo)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Para calcular la firma HMAC real, usa:",
+                  "// HMAC-SHA256(body, webhook_secret_hash)",
+                  "// En este ejemplo se usa una firma de prueba.",
+                  "pm.collectionVariables.set('event_id', 'hmac-evt-' + Date.now());"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Con HMAC correcto esperamos 202; con incorrecto 401",
+                  "pm.test('Response received', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([202, 401, 404]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-PMS-Provider",
+                "value": "hotelbeds",
+                "type": "text"
+              },
+              {
+                "key": "X-PMS-Signature",
+                "value": "sha256_hmac_del_body_con_webhook_secret",
+                "type": "text",
+                "description": "HMAC-SHA256 del body usando el webhook_secret_hash almacenado"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_id\": \"{{event_id}}\",\n  \"event_type\": \"availability_update\",\n  \"pms_provider\": \"hotelbeds\",\n  \"pms_property_id\": \"HB-12345\",\n  \"timestamp\": \"2026-04-05T10:00:00Z\",\n  \"data\": {\n    \"room_id\": \"room-suite-001\",\n    \"dates\": [\n      {\n        \"date\": \"2026-07-01\",\n        \"available_units\": 2\n      }\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/pms/webhook",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pms", "webhook"]
+            },
+            "description": "Llamada directa desde un PMS externo usando autenticación HMAC.\n\nNo requiere JWT — usa X-PMS-Provider y X-PMS-Signature en lugar de Authorization."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "PMS Properties",
+      "item": [
+        {
+          "name": "Registrar PMS Property",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "pm.test('Property creada correctamente', function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body).to.have.property('id');",
+                  "    pm.expect(body.status).to.equal('active');",
+                  "    pm.expect(body.pms_provider).to.equal('hotelbeds');",
+                  "    // Guardar ID para pruebas posteriores",
+                  "    pm.collectionVariables.set('property_id', body.id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{hotel_admin_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hotel_id\": \"{{hotel_id}}\",\n  \"pms_provider\": \"hotelbeds\",\n  \"pms_property_id\": \"HB-12345\",\n  \"api_key_hash\": \"a1b2c3d4e5f6789abcdef0123456789abcdef0123456789abcdef0123456789\",\n  \"webhook_secret_hash\": \"my-webhook-secret-for-hmac-validation\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/pms/properties",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pms", "properties"]
+            },
+            "description": "Registra una nueva propiedad PMS asociada a un hotel de TravelHub.\n\nRequiere `hotel_id` válido. La combinación (pms_provider, pms_property_id) debe ser única."
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {"key": "Authorization", "value": "Bearer {{hotel_admin_token}}"},
+                  {"key": "Content-Type", "value": "application/json"}
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"hotel_id\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"pms_provider\": \"hotelbeds\",\n  \"pms_property_id\": \"HB-12345\",\n  \"webhook_secret_hash\": \"my-secret\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/pms/properties",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "pms", "properties"]
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"id\": \"a1b2c3d4-e5f6-7890-abcd-ef1234567890\",\n  \"hotel_id\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"pms_provider\": \"hotelbeds\",\n  \"pms_property_id\": \"HB-12345\",\n  \"api_key_hash\": null,\n  \"webhook_secret_hash\": \"my-secret\",\n  \"status\": \"active\",\n  \"last_sync_at\": null,\n  \"sync_error_count\": 0,\n  \"created_at\": \"2026-04-05T10:00:00\",\n  \"updated_at\": \"2026-04-05T10:00:00\"\n}"
+            },
+            {
+              "name": "409 Conflict — Propiedad duplicada",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {"key": "Authorization", "value": "Bearer {{hotel_admin_token}}"},
+                  {"key": "Content-Type", "value": "application/json"}
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"hotel_id\": \"550e8400-e29b-41d4-a716-446655440000\",\n  \"pms_provider\": \"hotelbeds\",\n  \"pms_property_id\": \"HB-12345\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/v1/pms/properties",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "pms", "properties"]
+                }
+              },
+              "status": "Conflict",
+              "code": 409,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"detail\": \"PMS property already exists\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Listar PMS Properties",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Response is an array', function () {",
+                  "    pm.expect(pm.response.json()).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{hotel_admin_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/pms/properties",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pms", "properties"]
+            },
+            "description": "Lista todas las propiedades PMS registradas."
+          },
+          "response": []
+        },
+        {
+          "name": "Listar PMS Properties (filtrado por hotel_id)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Todas las properties son del hotel correcto', function () {",
+                  "    const body = pm.response.json();",
+                  "    const hotelId = pm.collectionVariables.get('hotel_id');",
+                  "    body.forEach(p => {",
+                  "        pm.expect(p.hotel_id).to.equal(hotelId);",
+                  "    });",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{hotel_admin_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/pms/properties?hotel_id={{hotel_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pms", "properties"],
+              "query": [
+                {
+                  "key": "hotel_id",
+                  "value": "{{hotel_id}}"
+                }
+              ]
+            },
+            "description": "Lista propiedades PMS filtradas por hotel_id."
+          },
+          "response": []
+        },
+        {
+          "name": "Obtener PMS Property por ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('ID coincide', function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.id).to.equal(pm.collectionVariables.get('property_id'));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{hotel_admin_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/pms/properties/{{property_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pms", "properties", "{{property_id}}"]
+            },
+            "description": "Obtiene el detalle de una propiedad PMS por su UUID."
+          },
+          "response": [
+            {
+              "name": "404 Not Found",
+              "originalRequest": {
+                "method": "GET",
+                "header": [{"key": "Authorization", "value": "Bearer {{hotel_admin_token}}"}],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/pms/properties/00000000-0000-0000-0000-000000000000",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "pms", "properties", "00000000-0000-0000-0000-000000000000"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"detail\": \"PMS property not found\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Actualizar PMS Property",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Status actualizado', function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.status).to.equal('inactive');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{hotel_admin_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"inactive\",\n  \"api_key_hash\": \"nuevo_hash_de_api_key\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/pms/properties/{{property_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pms", "properties", "{{property_id}}"]
+            },
+            "description": "Actualiza campos de una propiedad PMS. Todos los campos son opcionales."
+          },
+          "response": []
+        },
+        {
+          "name": "Eliminar PMS Property (Soft Delete)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Status es inactive (soft delete)', function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.status).to.equal('inactive');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{hotel_admin_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/pms/properties/{{property_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pms", "properties", "{{property_id}}"]
+            },
+            "description": "Desactiva una propiedad PMS (soft delete). Cambia status a 'inactive', no elimina el registro."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Disponibilidad",
+      "item": [
+        {
+          "name": "Consultar Disponibilidad por Hotel y Fechas",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Response is an array', function () {",
+                  "    pm.expect(pm.response.json()).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{hotel_admin_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/pms/availability?hotel_id={{hotel_id}}&date_from=2026-06-01&date_to=2026-06-30",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pms", "availability"],
+              "query": [
+                {"key": "hotel_id", "value": "{{hotel_id}}"},
+                {"key": "date_from", "value": "2026-06-01"},
+                {"key": "date_to", "value": "2026-06-30"}
+              ]
+            },
+            "description": "Consulta disponibilidad de habitaciones para un hotel en un rango de fechas.\n\nAccesible para hotel_admin, platform_admin y traveler."
+          },
+          "response": [
+            {
+              "name": "200 OK — Con resultados",
+              "originalRequest": {
+                "method": "GET",
+                "header": [{"key": "Authorization", "value": "Bearer {{hotel_admin_token}}"}],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/pms/availability?hotel_id={{hotel_id}}&date_from=2026-06-01&date_to=2026-06-30",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "pms", "availability"],
+                  "query": [
+                    {"key": "hotel_id", "value": "{{hotel_id}}"},
+                    {"key": "date_from", "value": "2026-06-01"},
+                    {"key": "date_to", "value": "2026-06-30"}
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "[\n  {\n    \"id\": \"b2c3d4e5-...\",\n    \"room_id\": \"c3d4e5f6-...\",\n    \"fecha\": \"2026-06-01\",\n    \"unidades_disponibles\": 3,\n    \"unidades_reservadas\": 1,\n    \"ultima_actualizacion\": \"2026-04-05T10:00:00\",\n    \"fuente_actualizacion\": \"pms_webhook\"\n  }\n]"
+            },
+            {
+              "name": "200 OK — Sin resultados",
+              "originalRequest": {
+                "method": "GET",
+                "header": [{"key": "Authorization", "value": "Bearer {{hotel_admin_token}}"}],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/pms/availability?hotel_id={{hotel_id}}&date_from=2030-01-01&date_to=2030-01-31",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "pms", "availability"],
+                  "query": [
+                    {"key": "hotel_id", "value": "{{hotel_id}}"},
+                    {"key": "date_from", "value": "2030-01-01"},
+                    {"key": "date_to", "value": "2030-01-31"}
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "[]"
+            }
+          ]
+        },
+        {
+          "name": "Consultar Disponibilidad por Room ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{hotel_admin_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/pms/availability?room_id={{room_id}}&date_from=2026-06-01&date_to=2026-06-30",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pms", "availability"],
+              "query": [
+                {"key": "room_id", "value": "{{room_id}}"},
+                {"key": "date_from", "value": "2026-06-01"},
+                {"key": "date_to", "value": "2026-06-30"}
+              ]
+            },
+            "description": "Consulta disponibilidad filtrando por habitación específica."
+          },
+          "response": []
+        },
+        {
+          "name": "Consultar Disponibilidad — Traveler",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Traveler puede consultar disponibilidad (200)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{traveler_token}}",
+                "type": "text",
+                "description": "Traveler solo puede acceder a este endpoint"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/pms/availability?hotel_id={{hotel_id}}&date_from=2026-06-01&date_to=2026-06-30",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pms", "availability"],
+              "query": [
+                {"key": "hotel_id", "value": "{{hotel_id}}"},
+                {"key": "date_from", "value": "2026-06-01"},
+                {"key": "date_to", "value": "2026-06-30"}
+              ]
+            },
+            "description": "Verifica que un traveler puede consultar disponibilidad (único endpoint permitido para este rol)."
+          },
+          "response": []
+        },
+        {
+          "name": "Consultar Sync Status de Evento",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 or 404', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test('Tiene campos requeridos', function () {",
+                  "        const body = pm.response.json();",
+                  "        pm.expect(body).to.have.property('event_id');",
+                  "        pm.expect(body).to.have.property('status');",
+                  "        pm.expect(body).to.have.property('pms_provider');",
+                  "        pm.expect(body).to.have.property('event_type');",
+                  "        pm.expect(body).to.have.property('retry_count');",
+                  "        pm.expect(body).to.have.property('created_at');",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{hotel_admin_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/pms/sync-status/{{event_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pms", "sync-status", "{{event_id}}"]
+            },
+            "description": "Consulta el estado de procesamiento de un evento de sincronización.\n\nEstados posibles: received → queued → processing → completed / failed"
+          },
+          "response": [
+            {
+              "name": "200 OK — Evento encontrado",
+              "originalRequest": {
+                "method": "GET",
+                "header": [{"key": "Authorization", "value": "Bearer {{hotel_admin_token}}"}],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/pms/sync-status/hotelbeds-evt-2026-001",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "pms", "sync-status", "hotelbeds-evt-2026-001"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"event_id\": \"hotelbeds-evt-2026-001\",\n  \"status\": \"queued\",\n  \"pms_provider\": \"hotelbeds\",\n  \"event_type\": \"availability_update\",\n  \"retry_count\": 0,\n  \"created_at\": \"2026-04-05T10:00:00\",\n  \"processed_at\": null\n}"
+            },
+            {
+              "name": "404 Not Found — Evento no existe",
+              "originalRequest": {
+                "method": "GET",
+                "header": [{"key": "Authorization", "value": "Bearer {{hotel_admin_token}}"}],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/pms/sync-status/nonexistent-id",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "v1", "pms", "sync-status", "nonexistent-id"]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "header": [{"key": "Content-Type", "value": "application/json"}],
+              "body": "{\n  \"detail\": \"Sync event not found\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Seguridad — Pruebas RBAC",
+      "item": [
+        {
+          "name": "Sin token → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Sin token retorna 401', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/pms/properties",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pms", "properties"]
+            },
+            "description": "Verifica que sin token se retorna 401."
+          },
+          "response": []
+        },
+        {
+          "name": "Traveler accede a Properties → 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Traveler no puede acceder a properties (403)', function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{traveler_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/pms/properties",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pms", "properties"]
+            },
+            "description": "El rol traveler no puede listar propiedades PMS."
+          },
+          "response": []
+        },
+        {
+          "name": "Traveler POST Webhook → 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Traveler no puede enviar webhooks (403)', function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{traveler_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_id\": \"rbac-test\",\n  \"event_type\": \"availability_update\",\n  \"pms_provider\": \"hotelbeds\",\n  \"pms_property_id\": \"HB-12345\",\n  \"timestamp\": \"2026-04-05T10:00:00Z\",\n  \"data\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/pms/webhook",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pms", "webhook"]
+            },
+            "description": "El rol traveler no puede enviar webhooks."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Flujo Completo (E2E)",
+      "item": [
+        {
+          "name": "1. Health Check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Servicio disponible', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().status).to.equal('ok');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2. Registrar PMS Property",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Property registrada', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const body = pm.response.json();",
+                  "    pm.collectionVariables.set('property_id', body.id);",
+                  "    console.log('property_id guardado:', body.id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{hotel_admin_token}}", "type": "text"},
+              {"key": "Content-Type", "value": "application/json", "type": "text"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hotel_id\": \"{{hotel_id}}\",\n  \"pms_provider\": \"travelclick\",\n  \"pms_property_id\": \"TC-E2E-001\",\n  \"webhook_secret_hash\": \"e2e-test-secret\"\n}",
+              "options": {"raw": {"language": "json"}}
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/pms/properties",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pms", "properties"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3. Enviar Webhook (availability_update)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.collectionVariables.set('event_id', 'e2e-evt-' + Date.now());"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Webhook aceptado (202)', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.status).to.equal('queued');",
+                  "    pm.collectionVariables.set('event_id', body.event_id);",
+                  "    console.log('event_id guardado:', body.event_id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{hotel_admin_token}}", "type": "text"},
+              {"key": "Content-Type", "value": "application/json", "type": "text"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_id\": \"{{event_id}}\",\n  \"event_type\": \"availability_update\",\n  \"pms_provider\": \"travelclick\",\n  \"pms_property_id\": \"TC-E2E-001\",\n  \"timestamp\": \"2026-04-05T10:00:00Z\",\n  \"data\": {\n    \"room_id\": \"tc-room-001\",\n    \"room_type\": \"Deluxe\",\n    \"dates\": [\n      {\"date\": \"2026-08-01\", \"available_units\": 4, \"rate\": 300.00, \"currency\": \"USD\"}\n    ]\n  }\n}",
+              "options": {"raw": {"language": "json"}}
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/pms/webhook",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pms", "webhook"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "4. Verificar Sync Status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Sync status visible (200)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.event_id).to.equal(pm.collectionVariables.get('event_id'));",
+                  "    pm.expect(['received','queued','processing','completed']).to.include(body.status);",
+                  "    console.log('Sync status:', body.status);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{hotel_admin_token}}", "type": "text"}
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/pms/sync-status/{{event_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pms", "sync-status", "{{event_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5. Verificar Idempotencia (reenvío del mismo evento)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Reenvío idempotente retorna 202', function () {",
+                  "    pm.response.to.have.status(202);",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.event_id).to.equal(pm.collectionVariables.get('event_id'));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{hotel_admin_token}}", "type": "text"},
+              {"key": "Content-Type", "value": "application/json", "type": "text"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_id\": \"{{event_id}}\",\n  \"event_type\": \"availability_update\",\n  \"pms_provider\": \"travelclick\",\n  \"pms_property_id\": \"TC-E2E-001\",\n  \"timestamp\": \"2026-04-05T10:00:00Z\",\n  \"data\": {\n    \"room_id\": \"tc-room-001\",\n    \"room_type\": \"Deluxe\",\n    \"dates\": [\n      {\"date\": \"2026-08-01\", \"available_units\": 4, \"rate\": 300.00, \"currency\": \"USD\"}\n    ]\n  }\n}",
+              "options": {"raw": {"language": "json"}}
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/pms/webhook",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pms", "webhook"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "6. Desactivar PMS Property",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Property desactivada (soft delete)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().status).to.equal('inactive');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{hotel_admin_token}}", "type": "text"}
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/pms/properties/{{property_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "pms", "properties", "{{property_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
