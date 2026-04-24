@@ -70,6 +70,7 @@ async def update_property(
     for field, value in update_data.items():
         setattr(prop, field, value)
     await db.flush()
+    await db.refresh(prop)
     return prop
 
 
@@ -77,4 +78,5 @@ async def delete_property(db: AsyncSession, property_id: uuid.UUID) -> PMSProper
     prop = await get_property(db, property_id)
     prop.status = "inactive"
     await db.flush()
+    await db.refresh(prop)
     return prop

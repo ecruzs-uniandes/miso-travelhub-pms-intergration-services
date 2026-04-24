@@ -1,7 +1,8 @@
 import time
 import logging
 from collections import defaultdict
-from fastapi import Request, HTTPException
+from fastapi import Request
+from starlette.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ class RateLimitFilter:
         _request_log[key] = [t for t in _request_log[key] if t > window_start]
 
         if len(_request_log[key]) >= RATE_LIMIT:
-            raise HTTPException(status_code=429, detail="Rate limit exceeded")
+            return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
 
         _request_log[key].append(now)
         return await call_next(request)
