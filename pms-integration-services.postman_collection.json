@@ -291,7 +291,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"event_id\": \"{{event_id}}\",\n  \"event_type\": \"rate_update\",\n  \"pms_provider\": \"hotelbeds\",\n  \"pms_property_id\": \"HB-12345\",\n  \"timestamp\": \"2026-04-05T12:00:00Z\",\n  \"data\": {\n    \"room_id\": \"room-standard-001\",\n    \"rates\": [\n      {\n        \"date_from\": \"2026-06-01\",\n        \"date_to\": \"2026-06-30\",\n        \"price\": 180.00,\n        \"currency\": \"USD\",\n        \"discount\": 10.00\n      }\n    ]\n  }\n}",
+              "raw": "{\n  \"event_id\": \"{{event_id}}\",\n  \"event_type\": \"rate_update\",\n  \"pms_provider\": \"hotelbeds\",\n  \"pms_property_id\": \"HB-12345\",\n  \"timestamp\": \"2026-04-05T12:00:00Z\",\n  \"data\": {\n    \"room_mappings\": {\"PMS-STD-001\": \"{{room_id}}\"},\n    \"rates\": [\n      {\n        \"pms_room_id\": \"PMS-STD-001\",\n        \"fecha_inicio\": \"2026-06-01\",\n        \"fecha_fin\": \"2026-06-30\",\n        \"precio_por_noche\": 180.00,\n        \"moneda\": \"USD\"\n      }\n    ]\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"

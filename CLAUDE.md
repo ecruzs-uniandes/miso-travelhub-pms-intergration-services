@@ -52,7 +52,30 @@ clouddeploy.yaml                  # canary 10→50→100, requireApproval
 skaffold.yaml                     # verify health entre fases
 k8s/service-prod.yaml             # manifiesto Cloud Run prod
 deploy/deploy.sh                  # script manual dev|prod
+pms-integration-services.postman_collection.json   # coleccion Postman (Health, Webhook, Properties, Availability, RBAC, E2E)
 ```
+
+## Endpoints HTTP
+
+Prefijo: `/api/v1/pms`. Auth dual: JWT Bearer (gateway-validated, decode no-verify) **o** HMAC (`X-PMS-Provider` + `X-PMS-Signature` para sistemas PMS externos, solo en webhook).
+
+| Método | Path | Roles permitidos | Descripción | Códigos |
+|---|---|---|---|---|
+| GET    | `/health` | público | Estado de DB y Kafka | 200 / 503 |
+| POST   | `/api/v1/pms/webhook` | `hotel_admin`, `platform_admin`, `pms_system` (HMAC) | Recibe evento PMS, valida idempotencia, publica `SyncCommand` en Kafka. Responde antes de procesar. | 202 / 401 / 403 / 404 / 422 / 503 |
+| POST   | `/api/v1/pms/properties` | `hotel_admin`, `platform_admin` | Registra propiedad PMS (uq `pms_provider+pms_property_id`) | 201 / 401 / 403 / 409 / 422 |
+| GET    | `/api/v1/pms/properties` | `hotel_admin`, `platform_admin` | Lista; query `?hotel_id=<uuid>` opcional | 200 / 401 / 403 |
+| GET    | `/api/v1/pms/properties/{id}` | `hotel_admin`, `platform_admin` | Detalle por UUID | 200 / 401 / 403 / 404 |
+| PUT    | `/api/v1/pms/properties/{id}` | `hotel_admin`, `platform_admin` | Actualiza `api_key_hash`, `webhook_secret_hash`, `status` | 200 / 401 / 403 / 404 |
+| DELETE | `/api/v1/pms/properties/{id}` | `hotel_admin`, `platform_admin` | Soft delete (`status='inactive'`) | 200 / 401 / 403 / 404 |
+| GET    | `/api/v1/pms/availability` | `traveler`, `hotel_admin`, `platform_admin` | Query: `hotel_id`, `room_id`, `date_from`, `date_to` (todos opcionales) | 200 / 401 / 403 |
+| GET    | `/api/v1/pms/sync-status/{event_id}` | `hotel_admin`, `platform_admin` | Estado del evento (`received`→`queued`→`processing`→`completed`/`failed`) | 200 / 401 / 403 / 404 |
+
+> **HMAC** se calcula como `HMAC-SHA256(body_raw, pms_property.webhook_secret_hash).hex()`. Solo aplica a `POST /webhook` cuando NO viene JWT (rol `pms_system`).
+> **Ojo con el nombre `webhook_secret_hash`:** la columna se usa como el **secreto en texto plano** (es la clave HMAC), no como un hash. El nombre quedó del schema original y no se cambió para no romper migraciones.
+> **Idempotencia:** `event_id` único; si ya está en estado `completed|queued|processing` se responde 202 con el status existente sin re-publicar.
+> **SyncCommand publicado a Kafka:** `{command_id (uuid v4), event_id, event_type, pms_provider, hotel_id, pms_property_id, timestamp, data, retry_count: 0, created_at}`. Producer key = `hotel_id` (orden por hotel).
+> **Guía de testing end-to-end** (preparar BD, obtener JWT, enviar webhook, verificar BD): ver `../PMS_TESTING_GUIDE.md` en la raíz del monorepo.
 
 ## Despliegue actual
 
