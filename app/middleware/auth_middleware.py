@@ -29,9 +29,13 @@ def decode_jwt_no_verify(token: str) -> dict:
 
 
 def extract_token(request: Request) -> Optional[str]:
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        return auth_header[7:]
+    # When traffic comes through API Gateway, GCP replaces "Authorization" with a
+    # service OIDC token and moves the original user JWT to "X-Forwarded-Authorization".
+    # Read X-Forwarded-Authorization first; fall back to Authorization for direct calls.
+    for header in ("X-Forwarded-Authorization", "Authorization"):
+        value = request.headers.get(header, "")
+        if value.startswith("Bearer "):
+            return value[7:]
     return None
 
 
