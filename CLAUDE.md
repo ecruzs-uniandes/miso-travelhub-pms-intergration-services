@@ -82,11 +82,21 @@ Prefijo: `/api/v1/pms`. Auth dual: JWT Bearer (gateway-validated, decode no-veri
 | Ambiente | Project | URL | Estado |
 |---|---|---|---|
 | **DEV** | `gen-lang-client-0930444414` | https://pms-integration-services-ridyy4wz4q-uc.a.run.app | ✅ Auto-deploy via push a `feature/*` o `develop` |
-| **PROD** | `travelhub-prod-492116` | — | ⏸ Pipeline Cloud Deploy creado; deploy se activa con push a `main` (requiere Kafka en prod) |
+| **PROD** | `travelhub-prod-492116` | https://pms-integration-services-qhweqfkejq-uc.a.run.app | ✅ Desplegado 2026-05-08 (Cloud Deploy canary). Smoke `/health` → `database:ok kafka:ok` |
+
+### ⚠ Bug conocido (deuda código, post-deploy 2026-05-08)
+
+El middleware de auth solo lee header `Authorization`. Cuando el request llega via API Gateway, GCP **reemplaza** `Authorization` con un OIDC token de servicio y mueve el JWT del usuario a `X-Forwarded-Authorization`. Resultado: requests via gateway con JWT válido → 403 (RBAC falla porque lee el OIDC, no el JWT del usuario).
+
+**Reproducción:**
+- `curl https://pms-integration-services-qhweqfkejq-uc.a.run.app/api/v1/pms/availability -H "Authorization: Bearer <jwt>"` → **200** ✅
+- `curl https://prod-travelhub-gateway-cfv1jc0r.uc.gateway.dev/api/v1/pms/availability -H "Authorization: Bearer <jwt>"` → **403** ❌
+
+**Fix esperado:** en `app/middleware/auth_middleware.py`, leer primero `X-Forwarded-Authorization`, fallback a `Authorization`. Mismo patrón que ya tiene user-services. Ver `miso-travelhub-user-services/app/middleware/auth_chain.py` como referencia.
 
 ### Branch de trabajo
 
-`feature/ci-cd-setup` — contiene la config de CI/CD WIF + Cloud Deploy.
+`main` — CI/CD pipeline activo (deploy-prod habilitado en commit `88b6057` de 2026-05-08; antes estaba en `if: false # TODO Fase 2`).
 
 ## Network setup (gotchas críticos)
 
