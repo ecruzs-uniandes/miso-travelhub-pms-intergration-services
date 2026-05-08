@@ -1,16 +1,15 @@
 import uuid
 from sqlalchemy import Column, String, DateTime, Integer, ForeignKey, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from app.database import Base
+from app.database import Base, GUID
 
 
 class PMSProperty(Base):
     __tablename__ = "pms_properties"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    hotel_id = Column(UUID(as_uuid=True), ForeignKey("hotels.id"), nullable=False)
+    id = Column(GUID, primary_key=True, default=uuid.uuid4)
+    hotel_id = Column(GUID, ForeignKey("hotels.id"), nullable=False)
     pms_provider = Column(String(100), nullable=False)
     pms_property_id = Column(String(255), nullable=False)
     api_key_hash = Column(String(255))

@@ -1,12 +1,16 @@
 import logging
 from typing import Optional
-from fastapi import Request, HTTPException
+from fastapi import Request
+from starlette.responses import JSONResponse
 from jose import jwt, JWTError
 
 logger = logging.getLogger(__name__)
 
 # Routes accessible without JWT (PMS webhook uses HMAC or is pre-validated by gateway)
 WEBHOOK_PATH = "/api/v1/pms/webhook"
+
+# Public routes (health checks, docs) — no JWT required
+PUBLIC_PATHS = {"/health", "/docs", "/redoc", "/openapi.json"}
 
 
 def decode_jwt_no_verify(token: str) -> dict:
@@ -16,12 +20,12 @@ def decode_jwt_no_verify(token: str) -> dict:
             token,
             key="",
             algorithms=["HS256", "RS256"],
-            options={"verify_signature": False, "verify_exp": False},
+            options={"verify_signature": False, "verify_exp": False, "verify_aud": False},
         )
         return payload
     except JWTError as e:
         logger.warning(f"JWT decode failed: {e}")
-        raise HTTPException(status_code=401, detail="Invalid token")
+        return None
 
 
 def extract_token(request: Request) -> Optional[str]:
@@ -45,15 +49,21 @@ class AuthMiddleware:
     """
 
     async def __call__(self, request: Request, call_next):
+        path = request.url.path
+
+        # Public routes (health, docs) bypass auth entirely
+        if path in PUBLIC_PATHS or path.startswith("/docs") or path.startswith("/redoc"):
+            request.state.user_id = None
+            request.state.user_role = "public"
+            return await call_next(request)
+
         # Webhook path supports HMAC auth — skip JWT requirement
-        if request.url.path == WEBHOOK_PATH:
+        if path == WEBHOOK_PATH:
             token = extract_token(request)
             if token:
-                try:
-                    payload = decode_jwt_no_verify(token)
+                payload = decode_jwt_no_verify(token)
+                if payload:
                     set_user_context(request, payload)
-                except HTTPException:
-                    pass  # Will be validated by webhook handler via HMAC
             request.state.user_id = getattr(request.state, "user_id", None)
             request.state.user_role = getattr(request.state, "user_role", "pms_system")
             return await call_next(request)
@@ -61,8 +71,10 @@ class AuthMiddleware:
         # All other routes require a valid JWT
         token = extract_token(request)
         if not token:
-            raise HTTPException(status_code=401, detail="Missing authentication token")
+            return JSONResponse(status_code=401, content={"detail": "Missing authentication token"})
 
         payload = decode_jwt_no_verify(token)
+        if payload is None:
+            return JSONResponse(status_code=401, content={"detail": "Invalid token"})
         set_user_context(request, payload)
         return await call_next(request)

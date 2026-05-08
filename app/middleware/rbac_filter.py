@@ -1,5 +1,6 @@
 import logging
-from fastapi import Request, HTTPException
+from fastapi import Request
+from starlette.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
@@ -26,24 +27,24 @@ class RBACFilter:
         method = request.method
         role = getattr(request.state, "user_role", "")
 
-        # Health endpoint is always open
-        if path == "/health":
+        # Public endpoints (health, docs, openapi) always open
+        if path in {"/health", "/docs", "/redoc", "/openapi.json"} or path.startswith("/docs") or path.startswith("/redoc"):
             return await call_next(request)
 
         # Webhook: allow pms_system (HMAC auth) or hotel_admin/platform_admin
         if path == WEBHOOK_PATH and method == "POST":
             if role in ADMIN_ROLES or role == PMS_SYSTEM_ROLE:
                 return await call_next(request)
-            raise HTTPException(status_code=403, detail="Forbidden")
+            return JSONResponse(status_code=403, content={"detail": "Forbidden"})
 
         # Traveler: only GET availability
         if role == TRAVELER_ROLE:
             if path.startswith(AVAILABILITY_PATH) and method == "GET":
                 return await call_next(request)
-            raise HTTPException(status_code=403, detail="Forbidden")
+            return JSONResponse(status_code=403, content={"detail": "Forbidden"})
 
         # Admin roles: all PMS routes
         if role in ADMIN_ROLES:
             return await call_next(request)
 
-        raise HTTPException(status_code=403, detail="Forbidden")
+        return JSONResponse(status_code=403, content={"detail": "Forbidden"})

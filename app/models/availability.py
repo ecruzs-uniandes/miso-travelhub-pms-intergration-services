@@ -1,16 +1,15 @@
 import uuid
 from sqlalchemy import Column, Integer, DateTime, Date, String, ForeignKey, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from app.database import Base
+from app.database import Base, GUID
 
 
 class Availability(Base):
     __tablename__ = "availability"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    room_id = Column(UUID(as_uuid=True), ForeignKey("rooms.id"), nullable=False)
+    id = Column(GUID, primary_key=True, default=uuid.uuid4)
+    room_id = Column(GUID, ForeignKey("rooms.id"), nullable=False)
     fecha = Column(Date, nullable=False)
     unidades_disponibles = Column(Integer, nullable=False, default=0)
     unidades_reservadas = Column(Integer, nullable=False, default=0)
