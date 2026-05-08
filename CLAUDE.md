@@ -84,15 +84,20 @@ Prefijo: `/api/v1/pms`. Auth dual: JWT Bearer (gateway-validated, decode no-veri
 | **DEV** | `gen-lang-client-0930444414` | https://pms-integration-services-ridyy4wz4q-uc.a.run.app | ✅ Auto-deploy via push a `feature/*` o `develop` |
 | **PROD** | `travelhub-prod-492116` | https://pms-integration-services-qhweqfkejq-uc.a.run.app | ✅ Desplegado 2026-05-08 (Cloud Deploy canary). Smoke `/health` → `database:ok kafka:ok` |
 
-### ⚠ Bug conocido (deuda código, post-deploy 2026-05-08)
+### ✅ Bug auth gateway — RESUELTO 2026-05-08 sesión 2 (commit `d099e39`)
 
-El middleware de auth solo lee header `Authorization`. Cuando el request llega via API Gateway, GCP **reemplaza** `Authorization` con un OIDC token de servicio y mueve el JWT del usuario a `X-Forwarded-Authorization`. Resultado: requests via gateway con JWT válido → 403 (RBAC falla porque lee el OIDC, no el JWT del usuario).
+Histórico: el middleware solo leía `Authorization`. Cuando el request llegaba via API Gateway, GCP **reemplaza** `Authorization` con un OIDC token de servicio y mueve el JWT del usuario a `X-Forwarded-Authorization`. Resultado: requests via gateway con JWT válido → 403.
 
-**Reproducción:**
-- `curl https://pms-integration-services-qhweqfkejq-uc.a.run.app/api/v1/pms/availability -H "Authorization: Bearer <jwt>"` → **200** ✅
-- `curl https://prod-travelhub-gateway-cfv1jc0r.uc.gateway.dev/api/v1/pms/availability -H "Authorization: Bearer <jwt>"` → **403** ❌
+**Fix aplicado** en `app/middleware/auth_middleware.py:extract_token`:
+```python
+for header in ("X-Forwarded-Authorization", "Authorization"):
+    value = request.headers.get(header, "")
+    if value.startswith("Bearer "):
+        return value[7:]
+return None
+```
 
-**Fix esperado:** en `app/middleware/auth_middleware.py`, leer primero `X-Forwarded-Authorization`, fallback a `Authorization`. Mismo patrón que ya tiene user-services. Ver `miso-travelhub-user-services/app/middleware/auth_chain.py` como referencia.
+Confirmado smoke `https://apitravelhub.site/api/v1/pms/availability` con JWT traveler → 200 OK; `/api/v1/pms/properties` → 403 (RBAC bloquea correctamente al traveler).
 
 ### Branch de trabajo
 
