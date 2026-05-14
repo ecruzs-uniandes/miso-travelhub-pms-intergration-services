@@ -1,4 +1,3 @@
-import uuid
 import logging
 from typing import Optional
 from datetime import date
@@ -8,7 +7,7 @@ from sqlalchemy import select
 
 from app.database import get_db
 from app.models.availability import Availability
-from app.models.room import Room
+from app.models.habitacion import Habitacion
 from app.models.sync_event import SyncEvent
 from app.schemas.availability import AvailabilityResponse, SyncStatusResponse
 
@@ -18,20 +17,20 @@ router = APIRouter()
 
 @router.get("/availability", response_model=list[AvailabilityResponse])
 async def get_availability(
-    hotel_id: Optional[uuid.UUID] = Query(default=None),
-    room_id: Optional[uuid.UUID] = Query(default=None),
+    hotel_id: Optional[str] = Query(default=None),
+    habitacion_id: Optional[str] = Query(default=None),
     date_from: Optional[date] = Query(default=None),
     date_to: Optional[date] = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
     query = select(Availability)
 
-    if room_id:
-        query = query.where(Availability.room_id == room_id)
+    if habitacion_id:
+        query = query.where(Availability.habitacionId == habitacion_id)
     elif hotel_id:
-        # Join through rooms to filter by hotel
-        query = query.join(Room, Availability.room_id == Room.id).where(
-            Room.hotel_id == hotel_id
+        # Join through habitacion to filter by hotel
+        query = query.join(Habitacion, Availability.habitacionId == Habitacion.id).where(
+            Habitacion.hotelId == hotel_id
         )
 
     if date_from:

@@ -10,7 +10,7 @@ from app.main import app
 from app.database import Base, get_db
 from app.models.hotel import Hotel
 from app.models.pms_property import PMSProperty
-from app.models.room import Room
+from app.models.habitacion import Habitacion
 from app.models.availability import Availability
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -63,13 +63,9 @@ async def client(db_session):
 
 @pytest_asyncio.fixture(scope="function")
 async def hotel(db_session):
-    h = Hotel(
-        id=uuid.uuid4(),
-        nombre="Hotel Test",
-        ciudad="Bogota",
-        pais="CO",
-        pms_proveedor="hotelbeds",
-    )
+    # Hotel canónico tiene solo `id` mapeado en este servicio (pms-int no usa
+    # otras columnas en runtime; el modelo es mínimo).
+    h = Hotel(id=str(uuid.uuid4()))
     db_session.add(h)
     await db_session.commit()
     await db_session.refresh(h)
@@ -93,12 +89,19 @@ async def pms_property(db_session, hotel):
 
 
 @pytest_asyncio.fixture(scope="function")
-async def room(db_session, hotel):
-    r = Room(
-        id=uuid.uuid4(),
-        hotel_id=hotel.id,
+async def habitacion(db_session, hotel):
+    r = Habitacion(
+        id=str(uuid.uuid4()),
+        hotelId=hotel.id,
         tipo="Standard",
-        capacidad_maxima=2,
+        categoria="Deluxe",
+        capacidadMaxima=2,
+        descripcion="Test habitacion",
+        imagenes=[],
+        tipo_habitacion="standard",
+        tipo_cama=["queen"],
+        tamano_habitacion="25m2",
+        amenidades=["WiFi"],
     )
     db_session.add(r)
     await db_session.commit()
@@ -107,11 +110,11 @@ async def room(db_session, hotel):
 
 
 @pytest_asyncio.fixture(scope="function")
-async def availability_record(db_session, room):
+async def availability_record(db_session, habitacion):
     from datetime import date
     a = Availability(
         id=uuid.uuid4(),
-        room_id=room.id,
+        habitacionId=habitacion.id,
         fecha=date(2026, 6, 1),
         unidades_disponibles=5,
         unidades_reservadas=1,

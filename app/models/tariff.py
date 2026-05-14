@@ -10,7 +10,8 @@ class Tariff(Base):
     __table_args__ = {"extend_existing": True}
 
     id = Column(GUID, primary_key=True, default=uuid.uuid4)
-    room_id = Column(GUID, ForeignKey("rooms.id"), nullable=False)
+    # FK a habitacion canónica (varchar id)
+    habitacionId = Column("habitacionId", String, ForeignKey("habitacion.id"), nullable=False)
     precio_base = Column(Numeric(12, 2), nullable=False)
     moneda = Column(String(3), nullable=False, default="USD")
     fecha_inicio = Column(Date, nullable=False)
@@ -18,4 +19,4 @@ class Tariff(Base):
     descuento = Column(Numeric(5, 2), default=0)
     created_at = Column(DateTime, default=func.now())
 
-    room = relationship("Room", back_populates="tariffs")
+    habitacion = relationship("Habitacion", back_populates="tariffs")

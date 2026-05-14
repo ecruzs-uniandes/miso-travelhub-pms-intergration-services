@@ -9,7 +9,8 @@ class PMSProperty(Base):
     __tablename__ = "pms_properties"
 
     id = Column(GUID, primary_key=True, default=uuid.uuid4)
-    hotel_id = Column(GUID, ForeignKey("hotels.id"), nullable=False)
+    # FK al hotel canónico (varchar id)
+    hotel_id = Column(String, ForeignKey("hotel.id"), nullable=False)
     pms_provider = Column(String(100), nullable=False)
     pms_property_id = Column(String(255), nullable=False)
     api_key_hash = Column(String(255))

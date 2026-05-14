@@ -6,7 +6,7 @@ import uuid
 
 class AvailabilityResponse(BaseModel):
     id: uuid.UUID
-    room_id: uuid.UUID
+    habitacionId: str
     fecha: date
     unidades_disponibles: int
     unidades_reservadas: int
@@ -17,8 +17,8 @@ class AvailabilityResponse(BaseModel):
 
 
 class AvailabilityQuery(BaseModel):
-    hotel_id: Optional[uuid.UUID] = None
-    room_id: Optional[uuid.UUID] = None
+    hotel_id: Optional[str] = None
+    habitacionId: Optional[str] = None
     date_from: Optional[date] = None
     date_to: Optional[date] = None
 
