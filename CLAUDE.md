@@ -44,7 +44,7 @@ app/
 │   ├── idempotency_service.py    # dedup por event_id, payload_hash
 │   ├── kafka_producer.py         # confluent-kafka producer
 │   └── property_service.py
-├── models/                       # SQLAlchemy: hotel, room, availability, tariff, pms_property, sync_event
+├── models/                       # SQLAlchemy: hotel, habitacion, disponibilidad, pms_property, sync_event (schema canonical 2026-05-14)
 ├── schemas/                      # Pydantic
 └── commands/sync_command.py      # mensaje publicado a Kafka
 .github/workflows/ci.yml          # WIF + Cloud Run direct VPC
@@ -68,7 +68,7 @@ Prefijo: `/api/v1/pms`. Auth dual: JWT Bearer (gateway-validated, decode no-veri
 | GET    | `/api/v1/pms/properties/{id}` | `hotel_admin`, `platform_admin` | Detalle por UUID | 200 / 401 / 403 / 404 |
 | PUT    | `/api/v1/pms/properties/{id}` | `hotel_admin`, `platform_admin` | Actualiza `api_key_hash`, `webhook_secret_hash`, `status` | 200 / 401 / 403 / 404 |
 | DELETE | `/api/v1/pms/properties/{id}` | `hotel_admin`, `platform_admin` | Soft delete (`status='inactive'`) | 200 / 401 / 403 / 404 |
-| GET    | `/api/v1/pms/availability` | `traveler`, `hotel_admin`, `platform_admin` | Query: `hotel_id`, `room_id`, `date_from`, `date_to` (todos opcionales) | 200 / 401 / 403 |
+| GET    | `/api/v1/pms/availability` | `traveler`, `hotel_admin`, `platform_admin` | Query: `hotel_id`, `habitacion_id`, `date_from`, `date_to` (todos opcionales). Lee de tabla canonical `disponibilidad` (response cols camelCase: `habitacionId`, `unidadesDisponibles`, `unidadesReservadas`, `ultimaActualizacion`, `fuenteActualizacion`). | 200 / 401 / 403 |
 | GET    | `/api/v1/pms/sync-status/{event_id}` | `hotel_admin`, `platform_admin` | Estado del evento (`received`→`queued`→`processing`→`completed`/`failed`) | 200 / 401 / 403 / 404 |
 
 > **HMAC** se calcula como `HMAC-SHA256(body_raw, pms_property.webhook_secret_hash).hex()`. Solo aplica a `POST /webhook` cuando NO viene JWT (rol `pms_system`).
