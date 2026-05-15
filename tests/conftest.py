@@ -11,7 +11,7 @@ from app.database import Base, get_db
 from app.models.hotel import Hotel
 from app.models.pms_property import PMSProperty
 from app.models.habitacion import Habitacion
-from app.models.availability import Availability
+from app.models.disponibilidad import Disponibilidad
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
@@ -112,13 +112,13 @@ async def habitacion(db_session, hotel):
 @pytest_asyncio.fixture(scope="function")
 async def availability_record(db_session, habitacion):
     from datetime import date
-    a = Availability(
-        id=uuid.uuid4(),
+    a = Disponibilidad(
+        id=str(uuid.uuid4()),
         habitacionId=habitacion.id,
         fecha=date(2026, 6, 1),
-        unidades_disponibles=5,
-        unidades_reservadas=1,
-        fuente_actualizacion="pms_webhook",
+        unidadesDisponibles=5,
+        unidadesReservadas=1,
+        fuenteActualizacion="pms_webhook",
     )
     db_session.add(a)
     await db_session.commit()

@@ -6,16 +6,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.database import get_db
-from app.models.availability import Availability
+from app.models.disponibilidad import Disponibilidad
 from app.models.habitacion import Habitacion
 from app.models.sync_event import SyncEvent
-from app.schemas.availability import AvailabilityResponse, SyncStatusResponse
+from app.schemas.availability import DisponibilidadResponse, SyncStatusResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/availability", response_model=list[AvailabilityResponse])
+@router.get("/availability", response_model=list[DisponibilidadResponse])
 async def get_availability(
     hotel_id: Optional[str] = Query(default=None),
     habitacion_id: Optional[str] = Query(default=None),
@@ -23,20 +23,19 @@ async def get_availability(
     date_to: Optional[date] = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
-    query = select(Availability)
+    query = select(Disponibilidad)
 
     if habitacion_id:
-        query = query.where(Availability.habitacionId == habitacion_id)
+        query = query.where(Disponibilidad.habitacionId == habitacion_id)
     elif hotel_id:
-        # Join through habitacion to filter by hotel
-        query = query.join(Habitacion, Availability.habitacionId == Habitacion.id).where(
+        query = query.join(Habitacion, Disponibilidad.habitacionId == Habitacion.id).where(
             Habitacion.hotelId == hotel_id
         )
 
     if date_from:
-        query = query.where(Availability.fecha >= date_from)
+        query = query.where(Disponibilidad.fecha >= date_from)
     if date_to:
-        query = query.where(Availability.fecha <= date_to)
+        query = query.where(Disponibilidad.fecha <= date_to)
 
     result = await db.execute(query)
     return list(result.scalars().all())

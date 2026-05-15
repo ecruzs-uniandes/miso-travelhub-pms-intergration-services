@@ -23,7 +23,7 @@ async def create_pms_property(
 
 @router.get("/properties", response_model=list[PMSPropertyResponse])
 async def list_pms_properties(
-    hotel_id: Optional[uuid.UUID] = Query(default=None),
+    hotel_id: Optional[str] = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
     return await property_service.list_properties(db, hotel_id)

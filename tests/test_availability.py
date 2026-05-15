@@ -22,7 +22,7 @@ async def test_get_availability_by_hotel_and_dates(client, hotel, availability_r
     assert response.status_code == 200
     body = response.json()
     assert len(body) >= 1
-    assert body[0]["unidades_disponibles"] == 5
+    assert body[0]["unidadesDisponibles"] == 5
 
 
 async def test_get_availability_no_results(client, hotel):

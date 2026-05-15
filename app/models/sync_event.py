@@ -11,7 +11,8 @@ class SyncEvent(Base):
     id = Column(GUID, primary_key=True, default=uuid.uuid4)
     event_id = Column(String(255), unique=True, nullable=False)
     pms_provider = Column(String(100), nullable=False)
-    hotel_id = Column(GUID, ForeignKey("hotels.id"))
+    # hotel canónico (varchar id). FK declarada pero apunta a la tabla `hotel` real.
+    hotel_id = Column(String, ForeignKey("hotel.id"))
     event_type = Column(String(50), nullable=False)
     payload_hash = Column(String(64))
     status = Column(String(20), default="received")

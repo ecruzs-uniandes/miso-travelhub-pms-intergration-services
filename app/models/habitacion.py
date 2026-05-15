@@ -1,7 +1,7 @@
 """Habitacion — referencia al modelo canónico del proyecto.
 
-pms-integration NO crea habitaciones — solo las usa como FK target en availability
-y tariff. El modelo mapea las 11 columnas NOT NULL canónicas.
+pms-integration NO crea habitaciones — solo las usa como FK target en disponibilidad.
+El modelo mapea las 11 columnas NOT NULL canónicas.
 """
 from sqlalchemy import Column, ForeignKey, Integer, String, JSON
 from sqlalchemy.orm import relationship
@@ -26,5 +26,4 @@ class Habitacion(Base):
     amenidades = Column(JSON, nullable=False)
 
     hotel = relationship("Hotel", back_populates="habitaciones")
-    availability = relationship("Availability", back_populates="habitacion")
-    tariffs = relationship("Tariff", back_populates="habitacion")
+    disponibilidades = relationship("Disponibilidad", back_populates="habitacion")
