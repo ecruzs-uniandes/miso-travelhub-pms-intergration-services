@@ -5,7 +5,7 @@ import uuid
 
 
 class PMSPropertyCreate(BaseModel):
-    hotel_id: uuid.UUID
+    hotel_id: str  # canonical hotel.id es varchar
     pms_provider: str
     pms_property_id: str
     api_key_hash: Optional[str] = None
@@ -20,7 +20,8 @@ class PMSPropertyUpdate(BaseModel):
 
 class PMSPropertyResponse(BaseModel):
     id: uuid.UUID
-    hotel_id: uuid.UUID
+    # Acepta UUID (DEV legacy column type) o str (canonical varchar). Serializa a str.
+    hotel_id: uuid.UUID | str
     pms_provider: str
     pms_property_id: str
     api_key_hash: Optional[str] = None

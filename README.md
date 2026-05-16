@@ -81,18 +81,17 @@ pms-integration-services/
 │   ├── config.py                   # Configuración vía Pydantic BaseSettings
 │   ├── database.py                 # Engine async, SessionLocal, Base, get_db
 │   │
-│   ├── models/                     # SQLAlchemy ORM models
-│   │   ├── hotel.py                # tabla: hotels
-│   │   ├── room.py                 # tabla: rooms
-│   │   ├── availability.py         # tabla: availability
-│   │   ├── tariff.py               # tabla: tariffs
-│   │   ├── pms_property.py         # tabla: pms_properties
+│   ├── models/                     # SQLAlchemy ORM models (schema canonical 2026-05-14)
+│   │   ├── hotel.py                # tabla: hotel (canonical varchar id)
+│   │   ├── habitacion.py           # tabla: habitacion (canonical)
+│   │   ├── disponibilidad.py       # tabla: disponibilidad (era availability)
+│   │   ├── pms_property.py         # tabla: pms_properties (auxiliar)
 │   │   └── sync_event.py           # tabla: sync_events (idempotencia)
 │   │
 │   ├── schemas/                    # Pydantic schemas (request/response)
 │   │   ├── webhook.py              # WebhookPayload, WebhookResponse
 │   │   ├── pms_property.py         # PMSPropertyCreate/Update/Response
-│   │   ├── availability.py         # AvailabilityResponse, SyncStatusResponse
+│   │   ├── availability.py         # DisponibilidadResponse (cols camelCase), SyncStatusResponse
 │   │   └── common.py               # HealthResponse, ErrorResponse
 │   │
 │   ├── api/                        # Routers FastAPI
@@ -433,22 +432,22 @@ Consulta disponibilidad de habitaciones.
 
 | Parámetro | Tipo | Descripción |
 |---|---|---|
-| `hotel_id` | UUID | Filtrar por hotel |
-| `room_id` | UUID | Filtrar por habitación específica |
+| `hotel_id` | varchar | Filtrar por hotel canonical |
+| `habitacion_id` | varchar | Filtrar por habitación específica canonical |
 | `date_from` | date (YYYY-MM-DD) | Fecha inicio del rango |
 | `date_to` | date (YYYY-MM-DD) | Fecha fin del rango |
 
-**Response `200 OK`:**
+**Response `200 OK`** (lee tabla canonical `disponibilidad`, cols camelCase):
 ```json
 [
   {
     "id": "b2c3d4e5-...",
-    "room_id": "c3d4e5f6-...",
+    "habitacionId": "b1000000-0000-0000-0000-000000000001",
     "fecha": "2026-06-01",
-    "unidades_disponibles": 3,
-    "unidades_reservadas": 1,
-    "ultima_actualizacion": "2026-04-02T10:00:00",
-    "fuente_actualizacion": "pms_webhook"
+    "unidadesDisponibles": 3,
+    "unidadesReservadas": 1,
+    "ultimaActualizacion": "2026-04-02T10:00:00Z",
+    "fuenteActualizacion": "pms_webhook"
   }
 ]
 ```
@@ -600,20 +599,21 @@ El script:
 
 ## Modelos de Datos
 
-### Relaciones entre tablas
+### Relaciones entre tablas (schema canonical 2026-05-14)
 
 ```
-hotels
+hotel (canonical, varchar id)
   │
-  ├──< rooms
+  ├──< habitacion (varchar id, hotelId FK)
   │       │
-  │       ├──< availability   (uq: room_id + fecha)
-  │       └──< tariffs
+  │       └──< disponibilidad   (uq: habitacionId + fecha)
   │
-  └──< pms_properties         (uq: pms_provider + pms_property_id)
+  └──< pms_properties           (uq: pms_provider + pms_property_id)
 
-sync_events                   (uq: event_id)
+sync_events                     (uq: event_id, hotel_id FK → hotel canonical)
 ```
+
+> `tarifa` y `tarifa_history` viven en `inventory-services` (owner). pms-int no las toca.
 
 ### Estados de SyncEvent
 

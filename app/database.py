@@ -66,9 +66,8 @@ async def get_db() -> AsyncSession:
 async def create_tables():
     # Import all models so SQLAlchemy registers them in Base.metadata before create_all
     import app.models.hotel  # noqa: F401
-    import app.models.room  # noqa: F401
-    import app.models.availability  # noqa: F401
-    import app.models.tariff  # noqa: F401
+    import app.models.habitacion  # noqa: F401
+    import app.models.disponibilidad  # noqa: F401
     import app.models.pms_property  # noqa: F401
     import app.models.sync_event  # noqa: F401
 

@@ -1,24 +1,23 @@
 from pydantic import BaseModel
 from typing import Optional
 from datetime import date, datetime
-import uuid
 
 
-class AvailabilityResponse(BaseModel):
-    id: uuid.UUID
-    room_id: uuid.UUID
+class DisponibilidadResponse(BaseModel):
+    id: str
+    habitacionId: str
     fecha: date
-    unidades_disponibles: int
-    unidades_reservadas: int
-    ultima_actualizacion: Optional[datetime] = None
-    fuente_actualizacion: Optional[str] = None
+    unidadesDisponibles: int
+    unidadesReservadas: int
+    ultimaActualizacion: Optional[datetime] = None
+    fuenteActualizacion: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
 
-class AvailabilityQuery(BaseModel):
-    hotel_id: Optional[uuid.UUID] = None
-    room_id: Optional[uuid.UUID] = None
+class DisponibilidadQuery(BaseModel):
+    hotel_id: Optional[str] = None
+    habitacionId: Optional[str] = None
     date_from: Optional[date] = None
     date_to: Optional[date] = None
 
