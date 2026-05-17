@@ -84,6 +84,16 @@ Prefijo: `/api/v1/pms`. Auth dual: JWT Bearer (gateway-validated, decode no-veri
 | **DEV** | `gen-lang-client-0930444414` | https://pms-integration-services-ridyy4wz4q-uc.a.run.app | ✅ Auto-deploy via push a `feature/*` o `develop` |
 | **PROD** | `travelhub-prod-492116` | https://pms-integration-services-qhweqfkejq-uc.a.run.app | ✅ Desplegado 2026-05-08 (Cloud Deploy canary). Smoke `/health` → `database:ok kafka:ok` |
 
+### ✅ Schema drift hotel_id UUID vs varchar — RESUELTO en DEV 2026-05-16
+
+Síntoma: el webhook `POST /api/v1/pms/webhook` devolvía `HTTP 500` con `column "hotel_id" is of type uuid but expression is of type character varying` al insertar en `sync_events` o `pms_properties`.
+
+Causa: el refactor canonical del 2026-05-14 (PR feature/canonical-refactor en pms-integration + worker) pasó los modelos SQLAlchemy de `hotel_id: UUID` → `hotel_id: String`, pero **pms-integration no usa Alembic** (crea tablas vía `create_tables` en lifespan startup). Como las tablas en DEV/PROD ya existían, el `CREATE TABLE IF NOT EXISTS` no hizo nada y las columnas quedaron como UUID. Adicionalmente, hubo dropeo de FK constraints en algún punto, dejando data inconsistente (huérfanas: `sync_events.hotel_id='a1b2c3d4-...'` sin row correspondiente en `hotel`).
+
+Fix en DEV: ejecutado vía Cloud Run Job override de `migrate-db` con script Python que (1) descubre las columnas con drift, (2) ALTER COLUMN a varchar en transacción, (3) re-crea la FK como `NOT VALID` para tolerar huérfanas. Runbook completo en [COMANDOS_UTILES.md sec 6.Z](../COMANDOS_UTILES.md) del monorepo.
+
+> **Para PROD**: aplicar el mismo runbook con `$PROJECT_PROD`. La alternativa (agregar Alembic al servicio + migration formal) queda como deuda — el runbook es suficiente porque ya está documentado y validado en DEV.
+
 ### ✅ Bug auth gateway — RESUELTO 2026-05-08 sesión 2 (commit `d099e39`)
 
 Histórico: el middleware solo leía `Authorization`. Cuando el request llegaba via API Gateway, GCP **reemplaza** `Authorization` con un OIDC token de servicio y mueve el JWT del usuario a `X-Forwarded-Authorization`. Resultado: requests via gateway con JWT válido → 403.
