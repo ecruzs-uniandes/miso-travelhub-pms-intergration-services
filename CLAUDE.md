@@ -76,6 +76,7 @@ Prefijo: `/api/v1/pms`. Auth dual: JWT Bearer (gateway-validated, decode no-veri
 > **Idempotencia:** `event_id` único; si ya está en estado `completed|queued|processing` se responde 202 con el status existente sin re-publicar.
 > **SyncCommand publicado a Kafka:** `{command_id (uuid v4), event_id, event_type, pms_provider, hotel_id, pms_property_id, timestamp, data, retry_count: 0, created_at}`. Producer key = `hotel_id` (orden por hotel).
 > **Guía de testing end-to-end** (preparar BD, obtener JWT, enviar webhook, verificar BD): ver `../PMS_TESTING_GUIDE.md` en la raíz del monorepo.
+> **Importante:** no existe PUT/POST directo sobre `/availability` ni `/tarifas`. Toda actualización de las tablas `disponibilidad`, `tarifa` y `hotel` pasa por `POST /api/v1/pms/webhook` (asíncrono: webhook 202 → Kafka → worker → BD). Schema canonical del body + tabla de `event_type` → tabla destino + ejemplos curl en [README.md § Webhook](README.md#webhook--única-api-para-actualizar-disponibilidad-tarifa-y-hotel).
 
 ## Despliegue actual
 
