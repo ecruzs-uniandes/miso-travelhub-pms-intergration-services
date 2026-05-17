@@ -266,7 +266,21 @@ Verifica conectividad con base de datos y Kafka.
 
 ---
 
-### Webhook
+### Webhook — única API para actualizar `disponibilidad`, `tarifa` y `hotel`
+
+> **Importante:** este servicio **no expone PUT/POST directos sobre `/availability` ni `/tarifas`**. La única vía para que un PMS externo escriba en esas tablas es enviar un evento al webhook. El flujo es asíncrono:
+>
+> ```
+> PMS externo
+>   │ POST /api/v1/pms/webhook  (JWT o HMAC)
+>   ▼
+> pms-integration-services      ── persiste sync_event (status='received') + publica SyncCommand a Kafka pms-sync-queue
+>   │ HTTP 202 (no espera el worker)
+>   ▼
+> pms-sync-worker               ── consume del topic, ejecuta strategy según event_type, upsert en BD canonical
+> ```
+>
+> Para **leer** disponibilidad ver `GET /api/v1/pms/availability` más abajo. Para revisar el resultado de un evento usar `GET /api/v1/pms/sync-status/{event_id}`.
 
 #### `POST /api/v1/pms/webhook`
 
@@ -274,44 +288,126 @@ Recibe un evento de sincronización desde un PMS externo. Responde inmediatament
 
 **Autenticación:** JWT `hotel_admin` / `platform_admin` **O** HMAC (ver [Autenticación](#autenticación)).
 
-**Request Body:**
+#### Tipos de evento y qué tabla afectan
+
+| `event_type` | Tabla destino (escrita por worker) | Notas |
+|---|---|---|
+| `availability_update` | `disponibilidad` (canonical, camelCase) | Upsert por `(habitacionId, fecha)`. Sólo toca `unidadesDisponibles` — `unidadesReservadas` lo gestiona booking-service y queda intacto. |
+| `rate_update` | `tarifa` (canonical) | Upsert tarifa por habitación + rango de fechas. Requiere `data.room_mappings` (`pms_room_id → habitacion.id`). |
+| `property_sync` | `hotel` (canonical) | Actualiza nombre/dirección/ciudad/país. NO sincroniza `habitacion` (la owna search-service). |
+
+#### Request body — schema canonical (post-refactor 2026-05-14)
+
 ```json
 {
-  "event_id": "hotelbeds-evt-2026-001",
+  "event_id": "hotelbeds-evt-2026-08-001",
   "event_type": "availability_update",
   "pms_provider": "hotelbeds",
-  "pms_property_id": "HB-12345",
-  "timestamp": "2026-04-02T10:00:00Z",
+  "pms_property_id": "HB-BOG-001",
+  "hotel_id": "d2e3f4a5-b6c7-8901-def0-234567890abc",
+  "timestamp": "2026-08-01T10:00:00Z",
   "data": {
-    "room_id": "room-suite-001",
-    "room_type": "Suite",
+    "habitacion_id": "hab-bogota-001",
     "dates": [
-      {
-        "date": "2026-06-01",
-        "available_units": 3,
-        "rate": 250.00,
-        "currency": "USD"
-      }
+      { "fecha": "2026-08-15", "unidades_disponibles": 3 },
+      { "fecha": "2026-08-16", "unidades_disponibles": 0 },
+      { "fecha": "2026-08-17", "unidades_disponibles": 5 }
     ]
   }
 }
 ```
 
-| Campo | Tipo | Descripción |
+| Campo top-level | Tipo | Descripción |
 |---|---|---|
-| `event_id` | string | ID único del evento en el PMS (clave de idempotencia) |
-| `event_type` | string | `availability_update` \| `rate_update` \| `property_sync` |
-| `pms_provider` | string | `hotelbeds` \| `travelclick` \| `roomraccoon` |
-| `pms_property_id` | string | ID de la propiedad en el sistema PMS externo |
-| `timestamp` | datetime | Timestamp ISO 8601 del evento |
-| `data` | object | Payload variable según `event_type` |
+| `event_id` | string | ID único del evento en el PMS (clave de idempotencia — un mismo `event_id` no se re-procesa). |
+| `event_type` | string | Uno de: `availability_update`, `rate_update`, `property_sync`. |
+| `pms_provider` | string | `hotelbeds`, `travelclick`, `roomraccoon`, etc. Combinado con `pms_property_id` debe matchear una fila en `pms_properties`. |
+| `pms_property_id` | string | ID de la propiedad en el sistema PMS externo. |
+| `hotel_id` | string | UUID/varchar del hotel canonical. NO se usa en validación — el `hotel_id` real se resuelve desde `pms_properties.hotel_id`. Se acepta por compat. |
+| `timestamp` | datetime ISO 8601 | Cuándo ocurrió el evento en el PMS. |
+| `data` | object | Payload variable según `event_type` — ver tablas debajo. |
 
-**Response `202 Accepted`:**
+#### `data` para `availability_update`
+
+| Campo | Tipo | Requerido | Descripción |
+|---|---|---|---|
+| `habitacion_id` | string | ✅ | ID canónico de la habitación (FK a `habitacion.id`). Legacy `room_id` aún se acepta. |
+| `dates` | array<object\> | ✅ | Lista de fechas con su disponibilidad. Cada item: |
+| `dates[].fecha` | date `YYYY-MM-DD` | ✅ | Fecha de la disponibilidad. Legacy `date` aún se acepta. |
+| `dates[].unidades_disponibles` | int | ✅ | Cuántos cuartos del tipo libres en el PMS. Legacy `available_units` / `unidadesDisponibles` aún se aceptan. |
+| `dates[].unidades_reservadas` | int | — | Opcional. Default 0. **Solo aplica al INSERT (fila nueva)** — en UPDATE de filas existentes el worker NO lo modifica (lo gestiona booking-service). |
+
+#### `data` para `rate_update`
+
+| Campo | Tipo | Requerido | Descripción |
+|---|---|---|---|
+| `room_mappings` | object | ✅ | Mapa `pms_room_id → habitacion.id` canonical. Sin mapping, el rate se omite con warning. |
+| `rates` | array<object\> | ✅ | Tarifas a aplicar. Cada item: |
+| `rates[].pms_room_id` | string | ✅ | ID del room según el PMS (será resuelto via `room_mappings`). |
+| `rates[].fecha_inicio`, `rates[].fecha_fin` | date | ✅ | Rango de validez de la tarifa. |
+| `rates[].precio_base` | number | ✅ | Precio antes de descuento. |
+| `rates[].moneda` | string | ✅ | ISO 4217 (`COP`, `USD`, etc.). |
+| `rates[].descuento` | number | — | Default 0. |
+
+#### `data` para `property_sync`
+
+| Campo | Tipo | Requerido | Descripción |
+|---|---|---|---|
+| `nombre` | string | — | Nuevo nombre del hotel. |
+| `direccion` | string | — | Nueva dirección. |
+| `ciudad` | string | — | Nueva ciudad. |
+| `pais` | string | — | Nuevo país (ISO 2-3 chars). |
+| `rooms` | array | — | Si presente, se ignora con warning. La sincronización de `habitacion` está deshabilitada (su owner es search-service). |
+
+#### Response `202 Accepted`
+
 ```json
 {
-  "event_id": "hotelbeds-evt-2026-001",
+  "event_id": "hotelbeds-evt-2026-08-001",
   "status": "queued"
 }
+```
+
+`202` no implica éxito en el upsert — sólo que el evento se aceptó y publicó al broker. Para confirmar resultado:
+
+```bash
+curl -s "https://apitravelhubdev.site/api/v1/pms/sync-status/$EVENT_ID" \
+  -H "Authorization: Bearer $TOKEN"
+# → {"event_id":"...","status":"completed","processed_at":"..."}
+```
+
+Status posibles: `received` (recién insertado) → `queued` (publicado a Kafka) → `processing` (worker tomó) → `completed` o `failed`.
+
+#### Curl ejemplo runable (DEV)
+
+```bash
+TOKEN=$(curl -sS -X POST https://apitravelhubdev.site/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"<tu_email>","password":"<tu_pass>"}' | jq -r .access_token)
+
+EVENT_ID="manual-$(date +%s)"
+
+curl -sS -X POST https://apitravelhubdev.site/api/v1/pms/webhook \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"event_id\": \"$EVENT_ID\",
+    \"event_type\": \"availability_update\",
+    \"pms_provider\": \"hotelbeds\",
+    \"pms_property_id\": \"HB-BOG-001\",
+    \"hotel_id\": \"d2e3f4a5-b6c7-8901-def0-234567890abc\",
+    \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
+    \"data\": {
+      \"habitacion_id\": \"hab-bogota-001\",
+      \"dates\": [
+        { \"fecha\": \"2026-05-16\", \"unidades_disponibles\": 3 }
+      ]
+    }
+  }"
+
+# Pre-requisito: existir un row en pms_properties con (pms_provider, pms_property_id)
+# = (hotelbeds, HB-BOG-001) cuyo hotel_id apunte a un hotel real en la tabla hotel.
+# Para crearlo: POST /api/v1/pms/properties (ver sección siguiente).
 ```
 
 **Errores:**
@@ -320,8 +416,9 @@ Recibe un evento de sincronización desde un PMS externo. Responde inmediatament
 |---|---|
 | `401` | Token ausente o firma HMAC inválida |
 | `403` | Rol sin permiso |
-| `404` | PMS property no registrada |
-| `422` | Payload inválido |
+| `404` | PMS property no registrada — registrarla con `POST /api/v1/pms/properties` antes |
+| `422` | Payload inválido (falta campo, tipo equivocado) |
+| `500` | Error de BD/Kafka. Confirmar con `GET /sync-status/{event_id}` si quedó algo en `sync_events`. |
 
 ---
 
